@@ -1,0 +1,76 @@
+Day 1: Polish the UX 
+
+ Replace text responses with Discord embeds
+
+Price command → Embed with color (green/red), thumbnail
+Watchlist → Clean embed with fields for each coin
+Alerts list → Formatted embed
+Error messages → Red embeds with emoji
+
+
+ Improve error handling
+
+Handle CoinGecko API rate limits gracefully
+Better messages for invalid coins
+Handle when user has no DMs enabled (for alerts)
+
+
+ Add a custom help command
+
+Override default !help
+Show all commands with examples
+Nice embed format
+
+
+
+Day 2: Add Stocks API 
+
+ Install yfinance library (pip install yfinance)
+ Create stocks.py file with functions to fetch stock data
+ Add stock commands
+
+!stock AAPL - get stock price
+!stock TSLA GOOGL NVDA - multiple stocks
+Support both crypto and stocks in watchlist
+Support stock alerts
+
+
+ Handle market hours - Show if market is open/closed
+ Add stock-specific data - market cap, P/E ratio, volume
+
+Day 3: Deploy + Documentation 
+
+ Clean up code
+
+Add comments to explain tricky parts
+Organize imports
+Remove debug print statements
+Create requirements.txt (pip freeze > requirements.txt)
+
+
+ Write killer README.md
+
+Project title + description
+Features list
+Screenshots/GIFs of bot in action
+Installation instructions
+Command list with examples
+Tech stack used
+Future improvements
+
+
+ Deploy the bot
+
+Option 1: Railway (easiest, free tier)
+Option 2: Render
+Option 3: Replit (if you're okay with public code)
+
+
+ Test everything works when deployed
+ Add bot invite link to README (optional - if you want others to use it)
+
+BONUS (if time):
+
+ Add a simple price chart using matplotlib
+ Add !trending command for top gainers/losers
+ Create a demo video showing all features
