@@ -23,9 +23,9 @@ async def on_ready():
     
 @tasks.loop(minutes=2)
 async def check_alerts():
-    print("Checking alerts...")
+    # print("Checking alerts...")
     alerts = get_all_alerts()
-    print(f"Found {len(alerts)} alerts")
+    # print(f"Found {len(alerts)} alerts")
     
     for alert in alerts:
         alert_id, user_id, coin_name, target_price, condition, asset_type = alert
@@ -171,11 +171,11 @@ async def watchlist(ctx):
     items = get_watchlist(user_id)
     
     if not items:
-        await ctx.send("📋 Your watchlist is empty!")
+        await ctx.send("Your watchlist is empty!")
         return
     
     embed = discord.Embed(
-        title="📊 Your Watchlist",
+        title="Your Watchlist",
         color=0x3498db,
         timestamp=discord.utils.utcnow()
     )
@@ -239,12 +239,88 @@ async def alerts(ctx):
     await ctx.send(embed=embed)
 
 @bot.command()
+async def clearalerts(ctx):
+    """Delete all your alerts at once"""
+    user_id = ctx.author.id
+    user_alerts = get_user_alerts(user_id)
+    
+    if not user_alerts:
+        embed = discord.Embed(
+            title="No Alerts",
+            description="You don't have any active alerts to clear.",
+            color=0x95a5a6
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    count = 0
+    for alert in user_alerts:
+        alert_id = alert[0]
+        if delete_alert(alert_id):
+            count += 1
+    
+    embed = discord.Embed(
+        title="Alerts Cleared",
+        description=f"Deleted {count} alert(s) successfully!",
+        color=0x2ecc71
+    )
+    await ctx.send(embed=embed)
+
+@bot.command()
 async def removealert(ctx, alert_id: int):
     """Remove an alert by ID. Usage: !removealert 1"""  
     if delete_alert(alert_id):
-        await ctx.send(f"Alert {alert_id} removed!")
+        embed = discord.Embed(
+            title="Alert Removed",
+            description=f"Alert #{alert_id} has been deleted successfully!",
+            color=0x2ecc71
+        )
+        await ctx.send(embed=embed)
     else:
-        await ctx.send(f"Alert {alert_id} not found!")
+        embed = discord.Embed(
+            title="Alert Not Found",
+            description=f"Could not find alert #{alert_id}. Use `!alerts` to see your active alerts.",
+            color=0xe74c3c
+        )
+        await ctx.send(embed=embed)
+        
+@bot.command()
+async def removealerts(ctx, *alert_ids: int):
+    """Remove multiple alerts. Usage: !removealerts 1 2 3"""
+    if not alert_ids:
+        embed = discord.Embed(
+            title="Missing Alert IDs",
+            description="Usage: `!removealerts <id1> <id2> <id3>`",
+            color=0xe74c3c
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    deleted = 0
+    failed = []
+    
+    for alert_id in alert_ids:
+        if delete_alert(alert_id):
+            deleted += 1
+        else:
+            failed.append(alert_id)
+    
+    if deleted > 0:
+        embed = discord.Embed(
+            title="✅ Alerts Removed",
+            description=f"Successfully deleted {deleted} alert(s)!",
+            color=0x2ecc71
+        )
+        if failed:
+            embed.add_field(name="Failed to delete", value=f"Alert IDs: {', '.join(map(str, failed))}", inline=False)
+    else:
+        embed = discord.Embed(
+            title="No Alerts Deleted",
+            description=f"Could not find alerts: {', '.join(map(str, failed))}",
+            color=0xe74c3c
+        )
+    
+    await ctx.send(embed=embed)
         
 @bot.command()
 async def stock(ctx, *tickers: str):
@@ -284,7 +360,7 @@ async def help(ctx):
     )
     
     embed.add_field(
-        name="📊 Price Commands",
+        name="Price Commands",
         value=(
             "`!price <coin>` - Get crypto price (e.g., !price bitcoin)\n"
             "`!stock <ticker>` - Get stock price (e.g., !stock AAPL)\n"
@@ -294,7 +370,7 @@ async def help(ctx):
     )
     
     embed.add_field(
-        name="👀 Watchlist",
+        name="Watchlist",
         value=(
             "`!watch add <asset> <crypto/stock>` - Add to watchlist\n"
             "`!watch remove <asset>` - Remove from watchlist\n"
@@ -305,17 +381,19 @@ async def help(ctx):
     )
     
     embed.add_field(
-        name="🔔 Alerts",
+        name="Alerts",
         value=(
             "`!alert <asset> <price> <above/below> <crypto/stock>`\n"
             "`!alerts` - List your active alerts\n"
             "`!removealert <id>` - Remove an alert"
+            "`!removealerts <id1> <id2>` - Remove multiple alerts\n"
+            "`!clearalerts` - Delete all your alerts"
         ),
         inline=False
     )
     
     embed.add_field(
-        name="💡 Examples",
+        name="Examples",
         value=(
             "`!watch add bitcoin crypto`\n"
             "`!alert AAPL 150 below stock`\n"
