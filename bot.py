@@ -5,6 +5,7 @@ import os
 from api import get_crypto_price
 from database import (init_db, add_to_watchlist, remove_from_watchlist, get_watchlist,
                       create_alert, get_user_alerts, get_all_alerts, delete_alert)
+from stocks import get_stock_price
 
 load_dotenv()
 
@@ -21,14 +22,19 @@ async def on_ready():
     
 @tasks.loop(minutes=2)
 async def check_alerts():
-    print("Checking alerts...") 
+    print("Checking alerts...")
     alerts = get_all_alerts()
     print(f"Found {len(alerts)} alerts")
     
     for alert in alerts:
-        alert_id, user_id, coin_name, target_price, condition = alert
+        alert_id, user_id, coin_name, target_price, condition, asset_type = alert
         
-        price, _ = get_crypto_price(coin_name)
+        if asset_type == 'crypto':
+            price, _ = get_crypto_price(coin_name)
+        else: 
+            price, _, _ = get_stock_price(coin_name)
+        
+        print(f"Checking {coin_name} ({asset_type}): price={price}, target={target_price}, condition={condition}")
         
         if not price:
             continue
@@ -43,7 +49,7 @@ async def check_alerts():
             print(f"Alert {alert_id} triggered!")
             user = await bot.fetch_user(user_id)
             emoji = "🚨"
-            await user.send(f"{emoji} **ALERT TRIGGERED!**\n{coin_name.upper()} is now ${price:,.2f} (target: ${target_price:,.2f} {condition})")
+            await user.send(f"{emoji} **ALERT TRIGGERED!**\n{coin_name.upper()} ({asset_type}) is now ${price:,.2f} (target: ${target_price:,.2f} {condition})")
             delete_alert(alert_id)
 
 @check_alerts.before_loop
@@ -86,66 +92,76 @@ async def price(ctx, *coins: str):
 
 
 @bot.command()
-async def watch(ctx, action: str, coin: str = None):
-    """Manage watchlist. Usage: !watch add bitcoin, !watch remove bitcoin, !watch list"""
+async def watch(ctx, action: str, asset: str = None, asset_type: str = 'crypto'):
+    """Manage watchlist. Usage: !watch add bitcoin crypto OR !watch add AAPL stock"""
     user_id = ctx.author.id
     
     if action == "add":
-        if not coin:
-            await ctx.send("Please specify a coin to add!")
+        if not asset:
+            await ctx.send("Please specify an asset to add!")
             return
         
-        if add_to_watchlist(user_id, coin):
-            await ctx.send(f"Added **{coin.upper()}** to your watchlist!")
+        if add_to_watchlist(user_id, asset, asset_type):
+            await ctx.send(f"Added **{asset.upper()}** ({asset_type}) to your watchlist!")
         else:
-            await ctx.send(f"**{coin.upper()}** is already in your watchlist!")
+            await ctx.send(f"**{asset.upper()}** is already in your watchlist!")
     
     elif action == "remove":
-        if not coin:
-            await ctx.send("Please specify a coin to remove!")
+        if not asset:
+            await ctx.send("Please specify an asset to remove!")
             return
         
-        if remove_from_watchlist(user_id, coin):
-            await ctx.send(f"Removed **{coin.upper()}** from your watchlist!")
+        if remove_from_watchlist(user_id, asset):
+            await ctx.send(f"Removed **{asset.upper()}** from your watchlist!")
         else:
-            await ctx.send(f"**{coin.upper()}** is not in your watchlist!")
+            await ctx.send(f"**{asset.upper()}** is not in your watchlist!")
     
     elif action == "list":
-        coins = get_watchlist(user_id)
-        if coins:
-            await ctx.send(f"Your watchlist: {', '.join([c.upper() for c in coins])}")
+        items = get_watchlist(user_id)
+        if items:
+            watchlist_text = "**Your watchlist:**\n"
+            for name, atype in items:
+                watchlist_text += f"• {name.upper()} ({atype})\n"
+            await ctx.send(watchlist_text)
         else:
-            await ctx.send("Your watchlist is empty! Use `!watch add <coin>` to add coins.")
+            await ctx.send("Your watchlist is empty! Use `!watch add <asset> <crypto/stock>` to add.")
     
     else:
         await ctx.send("Invalid action! Use: `!watch add/remove/list`")
 
 @bot.command()
 async def watchlist(ctx):
+    """Show prices for all assets in your watchlist"""
     user_id = ctx.author.id
-    coins = get_watchlist(user_id)
+    items = get_watchlist(user_id)
     
-    if not coins:
-        await ctx.send("Your watchlist is empty! Use `!watch add <coin>` to add coins.")
+    if not items:
+        await ctx.send("📋 Your watchlist is empty!")
         return
     
-    await ctx.send("**Your Watchlist Prices:**")
-    for coin in coins:
-        price_val, change = get_crypto_price(coin)
-        if price_val:
-            emoji = "📈" if change > 0 else "📉"
-            await ctx.send(f"{emoji} **{coin.upper()}**: ${price_val:,.2f} ({change:+.2f}% 24h)")
-        else:
-            await ctx.send(f"Couldn't fetch price for {coin.upper()}")
+    await ctx.send("📊 **Your Watchlist Prices:**")
+    for name, asset_type in items:
+        if asset_type == 'crypto':
+            price_val, change = get_crypto_price(name)
+            if price_val:
+                emoji = "📈" if change > 0 else "📉"
+                await ctx.send(f"{emoji} **{name.upper()}**: ${price_val:,.2f} ({change:+.2f}% 24h)")
+        else:  # stock
+            price_val, change, market_state = get_stock_price(name)
+            if price_val:
+                emoji = "📈" if change > 0 else "📉"
+                market_status = "🔴" if market_state == "CLOSED" else "🟢"
+                await ctx.send(f"{emoji} **{name.upper()}**: ${price_val:,.2f} ({change:+.2f}% today) {market_status}")
 
 @bot.command()
-async def alert(ctx, coin: str, target_price: float, condition: str):
+async def alert(ctx, asset: str, target_price: float, condition: str, asset_type: str = 'crypto'):
+    """Set a price alert. Usage: !alert bitcoin 50000 above crypto OR !alert AAPL 150 below stock"""
     if condition.lower() not in ['above', 'below']:
-        await ctx.send("Condition must be 'above' or 'below'!, price in USD")
+        await ctx.send("Condition must be 'above' or 'below'!")
         return
     
-    alert_id = create_alert(ctx.author.id, coin, target_price, condition)
-    await ctx.send(f"Alert created! I'll notify you when {coin.upper()} goes {condition} ${target_price:,.2f} (Alert ID: {alert_id})")
+    alert_id = create_alert(ctx.author.id, asset, target_price, condition, asset_type)
+    await ctx.send(f"Alert created! I'll notify you when {asset.upper()} ({asset_type}) goes {condition} ${target_price:,.2f} (Alert ID: {alert_id})")
 
 @bot.command()
 async def alerts(ctx):
@@ -158,18 +174,35 @@ async def alerts(ctx):
     
     alert_list = "**Your Active Alerts:**\n"
     for alert in user_alerts:
-        alert_id, coin, price, condition = alert
-        alert_list += f"ID {alert_id}: {coin.upper()} {condition} ${price:,.2f}\n"
+        alert_id, coin, price, condition, asset_type = alert
+        alert_list += f"ID {alert_id}: {coin.upper()} ({asset_type}) {condition} ${price:,.2f}\n"
     
     await ctx.send(alert_list)
 
 @bot.command()
 async def removealert(ctx, alert_id: int):
-    """Remove an alert by ID. Usage: !removealert 1"""
+    """Remove an alert by ID. Usage: !removealert 1"""  
     if delete_alert(alert_id):
         await ctx.send(f"Alert {alert_id} removed!")
     else:
         await ctx.send(f"Alert {alert_id} not found!")
+        
+@bot.command()
+async def stock(ctx, *tickers: str):
+    """Get stock prices. Usage: !stock AAPL TSLA GOOGL"""
+    if not tickers:
+        await ctx.send("specify at least one stock ticker.")
+        return
+    
+    for ticker in tickers:
+        price, change, market_state = get_stock_price(ticker)
+        
+        if price:
+            emoji = "📈" if change > 0 else "📉"
+            market_status = "🔴 CLOSED" if market_state == "CLOSED" else "🟢 OPEN"
+            await ctx.send(f"{emoji} **{ticker.upper()}**: ${price:,.2f} ({change:+.2f}% today) {market_status}")
+        else:
+            await ctx.send(f"couldn't find stock '{ticker.upper()}'. try: AAPL, TSLA, GOOGL, MSFT")
 
 bot.run(os.getenv('TOKEN'))
             
