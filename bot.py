@@ -13,6 +13,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
+bot.remove_command('help') 
 
 @bot.event
 async def on_ready():
@@ -59,13 +60,33 @@ async def before_check_alerts():
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
-        await ctx.send("command not found! use `!help` to see available commands.")
+        embed = discord.Embed(
+            title="Command Not Found",
+            description="Use `!help` to see available commands.",
+            color=0xe74c3c
+        )
+        await ctx.send(embed=embed)
     elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"missing argument! uusage: `!{ctx.command.name} <coin name>`")
+        embed = discord.Embed(
+            title="Missing Argument",
+            description=f"Usage: `!{ctx.command.name} <argument>`\nUse `!help` for examples.",
+            color=0xe74c3c
+        )
+        await ctx.send(embed=embed)
     elif isinstance(error, commands.BadArgument):
-        await ctx.send("invalid argument provided!")
+        embed = discord.Embed(
+            title="Invalid Argument",
+            description="Check your command syntax with `!help`",
+            color=0xe74c3c
+        )
+        await ctx.send(embed=embed)
     else:
-        await ctx.send(f"an error occurred: {str(error)}")
+        embed = discord.Embed(
+            title="Error",
+            description=f"An error occurred: {str(error)}",
+            color=0xe74c3c
+        )
+        await ctx.send(embed=embed)
         print(f"Error: {error}")
 
 @bot.command()
@@ -82,11 +103,20 @@ async def price(ctx, *coins: str):
     
     for coin in coins:
         coin = coin.lower()
-        price, change = get_crypto_price(coin)
+        price_val, change = get_crypto_price(coin)
         
-        if price:
-            emoji = "📈" if change > 0 else "📉"
-            await ctx.send(f"{emoji} **{coin.upper()}**: ${price:,.2f} ({change:+.2f}% 24h)")
+        if price_val:
+            color = 0x00ff00 if change > 0 else 0xff0000 
+            embed = discord.Embed(
+                title=f"{coin.upper()}",
+                color=color,
+                timestamp=discord.utils.utcnow()
+            )
+            embed.add_field(name="Price", value=f"${price_val:,.2f}", inline=True)
+            embed.add_field(name="24h Change", value=f"{change:+.2f}%", inline=True)
+            embed.set_footer(text="Data from CoinGecko")
+            
+            await ctx.send(embed=embed)
         else:
             await ctx.send(f"Couldn't find price for '{coin}'. Try: bitcoin, ethereum, solana")
 
@@ -102,7 +132,12 @@ async def watch(ctx, action: str, asset: str = None, asset_type: str = 'crypto')
             return
         
         if add_to_watchlist(user_id, asset, asset_type):
-            await ctx.send(f"Added **{asset.upper()}** ({asset_type}) to your watchlist!")
+            embed = discord.embeds(
+                title='Added to watchlist',
+                description=f'**{asset.upper()}** ({asset_type})',
+                color=0x2ecc71
+            )
+            await ctx.send(embed=embed)
         else:
             await ctx.send(f"**{asset.upper()}** is already in your watchlist!")
     
@@ -139,19 +174,34 @@ async def watchlist(ctx):
         await ctx.send("📋 Your watchlist is empty!")
         return
     
-    await ctx.send("📊 **Your Watchlist Prices:**")
+    embed = discord.Embed(
+        title="📊 Your Watchlist",
+        color=0x3498db,
+        timestamp=discord.utils.utcnow()
+    )
+    
     for name, asset_type in items:
         if asset_type == 'crypto':
             price_val, change = get_crypto_price(name)
             if price_val:
                 emoji = "📈" if change > 0 else "📉"
-                await ctx.send(f"{emoji} **{name.upper()}**: ${price_val:,.2f} ({change:+.2f}% 24h)")
-        else:  # stock
+                embed.add_field(
+                    name=f"{emoji} {name.upper()} (Crypto)",
+                    value=f"${price_val:,.2f} ({change:+.2f}% 24h)",
+                    inline=False
+                )
+        else:  
             price_val, change, market_state = get_stock_price(name)
             if price_val:
                 emoji = "📈" if change > 0 else "📉"
-                market_status = "🔴" if market_state == "CLOSED" else "🟢"
-                await ctx.send(f"{emoji} **{name.upper()}**: ${price_val:,.2f} ({change:+.2f}% today) {market_status}")
+                market_emoji = "🟢" if market_state != "CLOSED" else "🔴"
+                embed.add_field(
+                    name=f"{emoji} {name.upper()} (Stock) {market_emoji}",
+                    value=f"${price_val:,.2f} ({change:+.2f}% today)",
+                    inline=False
+                )
+    
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def alert(ctx, asset: str, target_price: float, condition: str, asset_type: str = 'crypto'):
@@ -165,19 +215,28 @@ async def alert(ctx, asset: str, target_price: float, condition: str, asset_type
 
 @bot.command()
 async def alerts(ctx):
-    """List your active alerts"""
     user_alerts = get_user_alerts(ctx.author.id)
     
     if not user_alerts:
         await ctx.send("You have no active alerts!")
         return
     
-    alert_list = "**Your Active Alerts:**\n"
+    embed = discord.Embed(
+        title="Your Active Alerts",
+        color=0xe74c3c,
+        timestamp=discord.utils.utcnow()
+    )
+    
     for alert in user_alerts:
         alert_id, coin, price, condition, asset_type = alert
-        alert_list += f"ID {alert_id}: {coin.upper()} ({asset_type}) {condition} ${price:,.2f}\n"
+        embed.add_field(
+            name=f"Alert #{alert_id}",
+            value=f"{coin.upper()} ({asset_type}) {condition} ${price:,.2f}",
+            inline=False
+        )
     
-    await ctx.send(alert_list)
+    embed.set_footer(text="Use !removealert <id> to remove an alert")
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def removealert(ctx, alert_id: int):
@@ -198,11 +257,76 @@ async def stock(ctx, *tickers: str):
         price, change, market_state = get_stock_price(ticker)
         
         if price:
-            emoji = "📈" if change > 0 else "📉"
-            market_status = "🔴 CLOSED" if market_state == "CLOSED" else "🟢 OPEN"
-            await ctx.send(f"{emoji} **{ticker.upper()}**: ${price:,.2f} ({change:+.2f}% today) {market_status}")
+            color = 0x00ff00 if change > 0 else 0xff0000
+            market_emoji = "🟢" if market_state != "CLOSED" else "🔴"
+            
+            embed = discord.Embed(
+                title=f"📊 {ticker.upper()}",
+                color=color,
+                timestamp=discord.utils.utcnow()
+            )
+            embed.add_field(name="Price", value=f"${price:,.2f}", inline=True)
+            embed.add_field(name="Today's Change", value=f"{change:+.2f}%", inline=True)
+            embed.add_field(name="Market Status", value=f"{market_emoji} {market_state}", inline=False)
+            embed.set_footer(text="Data from Yahoo Finance")
+            
+            await ctx.send(embed=embed)
         else:
             await ctx.send(f"couldn't find stock '{ticker.upper()}'. try: AAPL, TSLA, GOOGL, MSFT")
+
+@bot.command()
+async def help(ctx):
+    """Show all available commands"""
+    embed = discord.Embed(
+        title="🤖 TickerBot Commands",
+        description="Track crypto and stock prices with alerts and watchlists",
+        color=0x3498db
+    )
+    
+    embed.add_field(
+        name="📊 Price Commands",
+        value=(
+            "`!price <coin>` - Get crypto price (e.g., !price bitcoin)\n"
+            "`!stock <ticker>` - Get stock price (e.g., !stock AAPL)\n"
+            "`!price btc eth sol` - Get multiple prices"
+        ),
+        inline=False
+    )
+    
+    embed.add_field(
+        name="👀 Watchlist",
+        value=(
+            "`!watch add <asset> <crypto/stock>` - Add to watchlist\n"
+            "`!watch remove <asset>` - Remove from watchlist\n"
+            "`!watch list` - Show your watchlist\n"
+            "`!watchlist` - Show prices of watched assets"
+        ),
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🔔 Alerts",
+        value=(
+            "`!alert <asset> <price> <above/below> <crypto/stock>`\n"
+            "`!alerts` - List your active alerts\n"
+            "`!removealert <id>` - Remove an alert"
+        ),
+        inline=False
+    )
+    
+    embed.add_field(
+        name="💡 Examples",
+        value=(
+            "`!watch add bitcoin crypto`\n"
+            "`!alert AAPL 150 below stock`\n"
+            "`!price btc eth`"
+        ),
+        inline=False
+    )
+    
+    embed.set_footer(text="Made by rileriaaa.me | Data from CoinGecko & Yahoo Finance")
+    
+    await ctx.send(embed=embed)
 
 bot.run(os.getenv('TOKEN'))
             
