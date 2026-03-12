@@ -6,6 +6,7 @@ from api import get_crypto_price
 from database import (init_db, add_to_watchlist, remove_from_watchlist, get_watchlist,
                       create_alert, get_user_alerts, get_all_alerts, delete_alert)
 from stocks import get_stock_price
+from keep_alive import keep_alive
 
 load_dotenv()
 
@@ -406,5 +407,6 @@ async def help(ctx):
     
     await ctx.send(embed=embed)
 
+keep_alive() 
 bot.run(os.getenv('TOKEN'))
             
